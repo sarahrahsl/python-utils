@@ -1,0 +1,6 @@
+numpy
+tifffile
+nibabel
+opencv-python
+scipy
+scikit-image
