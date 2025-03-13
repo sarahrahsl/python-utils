@@ -291,13 +291,21 @@ def calculate_features(tiff_path, niigz_path, z_levels, pixelno_adj=20, pixelno_
     return result
 
 
-def calculate_properties3D(tiff_path, niigz_path, z_levels):
-    # Load the nerve mask, cancer mask
-    nerve_mask = read_niigz(niigz_path)  # Shape: (X, Y, Z)
-    cancer_mask = read_tiff(tiff_path)  # Shape: (Z, X, Y)
-    cancer_mask = np.transpose(cancer_mask, (1, 2, 0))  # Now (X, Y, Z)
 
-    nerve_mask_cropped, cancer_mask_resized = crop_and_downsample3D(nerve_mask, cancer_mask, z_levels)
+def calculate_properties(tiff_path, niigz_path, z_levels, sliceno=None):
+    # Load the nerve mask, cancer mask
+    start, end = z_levels
+    if sliceno is not None:
+        nerve_mask_cropped = read_niigz(niigz_path, int(start/4+sliceno))  # Shape: (X, Y, Z)
+        cancer_mask = read_tiff(tiff_path)  # Shape: (Z, X, Y)
+        cancer_mask = np.transpose(cancer_mask, (1, 2, 0))  # Now (X, Y, Z)
+        cancer_mask = cancer_mask[:, :, start+sliceno]
+        cancer_mask_resized = zoom(cancer_mask, (0.25, 0.25), order=0)
+    else:
+        nerve_mask = read_niigz(niigz_path)  # Shape: (X, Y, Z)
+        cancer_mask = read_tiff(tiff_path)  # Shape: (Z, X, Y)
+        cancer_mask = np.transpose(cancer_mask, (1, 2, 0))  # Now (X, Y, Z)
+        nerve_mask_cropped, cancer_mask_resized = crop_and_downsample3D(nerve_mask, cancer_mask, z_levels)
 
     tumor_nerve = nerve_mask_cropped & cancer_mask_resized
     stroma_nerve = nerve_mask_cropped & ~cancer_mask_resized
@@ -327,7 +335,7 @@ def calculate_properties3D(tiff_path, niigz_path, z_levels):
     return result
 
 
-def calculate_properties(tiff_path, niigz_path, z_levels, sliceno=None):
+def calculate_gland_properties(tiff_path, niigz_path, z_levels, sliceno=None):
     # Load the nerve mask, cancer mask
     start, end = z_levels
     if sliceno is not None:
@@ -338,6 +346,8 @@ def calculate_properties(tiff_path, niigz_path, z_levels, sliceno=None):
         cancer_mask_resized = zoom(cancer_mask, (0.25, 0.25), order=0)
     else:
         nerve_mask = read_niigz(niigz_path)  # Shape: (X, Y, Z)
+        nerve_mask = nerve_mask[:,:,start:end]
+        nerve_mask = zoom(nerve_mask, (0.25, 0.25, 0.25), order=0)
         cancer_mask = read_tiff(tiff_path)  # Shape: (Z, X, Y)
         cancer_mask = np.transpose(cancer_mask, (1, 2, 0))  # Now (X, Y, Z)
         nerve_mask_cropped, cancer_mask_resized = crop_and_downsample3D(nerve_mask, cancer_mask, z_levels)

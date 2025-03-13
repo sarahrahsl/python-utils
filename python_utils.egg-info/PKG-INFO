@@ -1,6 +1,7 @@
 Metadata-Version: 2.1
 Name: python-utils
 Version: 0.1
+License-File: LICENSE
 Requires-Dist: numpy
 Requires-Dist: tifffile
 Requires-Dist: nibabel

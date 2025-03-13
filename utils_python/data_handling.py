@@ -55,12 +55,24 @@ def read_niigz(file_path, level=None):
     img = nib.load(file_path)
     proxy = img.dataobj  # Lazy loading proxy
 
+    # Get shape and determine the shortest axis
+    shape = proxy.shape
+    shortest_axis = np.argmin(shape)
+
     if level is not None:
-        # Assuming the level corresponds to the third dimension (e.g., z-axis in 3D)
-        data = proxy[:, :, level]  # Load only the specified slice(s)
+        if shortest_axis == 0:
+            data = proxy[level, :, :]
+        elif shortest_axis == 1:
+            data = proxy[:, level, :]
+        elif shortest_axis == 2:
+            data = proxy[:, :, level]
     else:
-        # Load full data lazily (proxy only loads into memory when accessed)
+        # Load full data lazily
         data = proxy[:]
+
+    # Move the shortest axis to the 3rd position
+    axes_order = [i for i in range(len(shape)) if i != shortest_axis] + [shortest_axis]
+    data = np.moveaxis(data, axes_order, np.arange(len(shape)))
 
     return data
 

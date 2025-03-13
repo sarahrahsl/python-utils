@@ -1,3 +1,5 @@
+LICENSE
+README.md
 setup.py
 python_utils.egg-info/PKG-INFO
 python_utils.egg-info/SOURCES.txt
