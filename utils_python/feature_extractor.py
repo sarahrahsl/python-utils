@@ -2,7 +2,7 @@ import numpy as np
 from scipy.ndimage import distance_transform_edt, zoom, label
 from pathlib import Path
 from .data_handling import read_niigz, read_tiff
-from skimage.measure import regionprops
+from skimage.measure import regionprops,marching_cubes
 
 
 def crop_and_downsample3D(nerve_mask, cancer_mask, z_levels, zoom_factor = (0.25, 0.25, 0.25)):
@@ -26,6 +26,18 @@ def crop_and_downsample3D(nerve_mask, cancer_mask, z_levels, zoom_factor = (0.25
             nerve_mask_cropped = nerve_mask_cropped[:, :, :cancer_mask_resized.shape[2]]
         if nerve_mask_cropped.shape[2] < cancer_mask_resized.shape[2]:
             cancer_mask_resized = cancer_mask_resized[:, :, :nerve_mask_cropped.shape[2]]
+
+    if not nerve_mask_cropped.shape[1] == cancer_mask_resized.shape[1]:
+        if nerve_mask_cropped.shape[1] > cancer_mask_resized.shape[1]:
+            nerve_mask_cropped = nerve_mask_cropped[:, :cancer_mask_resized.shape[1], :]
+        if nerve_mask_cropped.shape[1] < cancer_mask_resized.shape[1]:
+            cancer_mask_resized = cancer_mask_resized[:, :nerve_mask_cropped.shape[1], :]
+
+    if not nerve_mask_cropped.shape[0] == cancer_mask_resized.shape[0]:
+        if nerve_mask_cropped.shape[0] > cancer_mask_resized.shape[0]:
+            nerve_mask_cropped = nerve_mask_cropped[:cancer_mask_resized.shape[0], :, :]
+        if nerve_mask_cropped.shape[0] < cancer_mask_resized.shape[0]:
+            cancer_mask_resized = cancer_mask_resized[:nerve_mask_cropped.shape[0], :, :]
     
     # Ensure nerve mask is boolean and convert cancer mask from 0,255 to 0,1
     nerve_mask_cropped = nerve_mask_cropped.astype(bool)
@@ -339,29 +351,44 @@ def calculate_gland_properties(tiff_path, niigz_path, z_levels, sliceno=None):
     # Load the nerve mask, cancer mask
     start, end = z_levels
     if sliceno is not None:
-        nerve_mask_cropped = read_niigz(niigz_path, int(start/4+sliceno))  # Shape: (X, Y, Z)
+        gland_mask_cropped = read_niigz(niigz_path, int(start+sliceno*4))  # Shape: (X, Y, Z)
+        gland_mask_cropped = zoom(gland_mask_cropped, (0.25, 0.25), order=0)
         cancer_mask = read_tiff(tiff_path)  # Shape: (Z, X, Y)
         cancer_mask = np.transpose(cancer_mask, (1, 2, 0))  # Now (X, Y, Z)
         cancer_mask = cancer_mask[:, :, start+sliceno]
         cancer_mask_resized = zoom(cancer_mask, (0.25, 0.25), order=0)
     else:
-        nerve_mask = read_niigz(niigz_path)  # Shape: (X, Y, Z)
-        nerve_mask = nerve_mask[:,:,start:end]
-        nerve_mask = zoom(nerve_mask, (0.25, 0.25, 0.25), order=0)
+        gland_mask = read_niigz(niigz_path)  # Shape: (X, Y, Z)
+        gland_mask = gland_mask[:,:,start:end]
+        gland_mask = zoom(gland_mask, (0.25, 0.25, 0.25), order=0)
         cancer_mask = read_tiff(tiff_path)  # Shape: (Z, X, Y)
         cancer_mask = np.transpose(cancer_mask, (1, 2, 0))  # Now (X, Y, Z)
-        nerve_mask_cropped, cancer_mask_resized = crop_and_downsample3D(nerve_mask, cancer_mask, z_levels)
+        gland_mask_cropped, cancer_mask_resized = crop_and_downsample3D(gland_mask, cancer_mask, z_levels)
 
-    tumor_nerve = nerve_mask_cropped & cancer_mask_resized
-    stroma_nerve = nerve_mask_cropped & ~cancer_mask_resized
-    labeled_mask, num_fragments = label(nerve_mask_cropped)
-    labeled_tumor, num_tumor_fragments = label(tumor_nerve)
-    labeled_stroma, num_stroma_fragments = label(stroma_nerve)
-    
-    # Compute properties for each segmentation
-    stats_nerve = getObjectProperties(labeled_mask, num_fragments, "nerve")
-    stats_tumor = getObjectProperties(labeled_tumor, num_tumor_fragments, "tumor")
-    stats_stroma = getObjectProperties(labeled_stroma, num_stroma_fragments, "stroma")
+    # Separate lumen, stroma, and epithelium
+    lu_mask = ((gland_mask_cropped == 1))
+    st_mask = ((gland_mask_cropped == 2))
+    ep_mask = ((gland_mask_cropped == 3))
+    cancer_lu_mask = lu_mask & cancer_mask_resized
+    nonca_lu_mask = lu_mask & ~cancer_mask_resized
+    cancer_st_mask = st_mask & cancer_mask_resized
+    nonca_st_mask = st_mask & ~cancer_mask_resized
+    cancer_ep_mask = ep_mask & cancer_mask_resized
+    nonca_ep_mask = ep_mask & ~cancer_mask_resized
+
+
+    # Calculate total vol, surface, and convex hull for each mask + individual masks
+    lumen_stats, total_lumen_vol, total_lumen_sa, total_lumen_chv = getTotalproperties(lu_mask, "lumen")
+    stroma_stats, total_stroma_vol, total_stroma_sa, total_stroma_chv = getTotalproperties(st_mask, "stroma")
+    epithelium_stats, total_epithelium_vol, total_epithelium_sa, total_epithelium_chv = getTotalproperties(ep_mask, "epithelium")
+
+    cancer_lumen_stats, cancer_lumen_vol, cancer_lumen_sa, cancer_lumen_chv = getTotalproperties(cancer_lu_mask, "cancer_lumen")
+    cancer_stroma_stats, cancer_stroma_vol, cancer_stroma_sa, cancer_stroma_chv = getTotalproperties(cancer_st_mask, "cancer_stroma")
+    cancer_epithelium_stats, cancer_epithelium_vol, cancer_epithelium_sa, cancer_epithelium_chv = getTotalproperties(cancer_ep_mask, "cancer_epithelium")
+
+    noncancer_lumen_stats, noncancer_lumen_vol, noncancer_lumen_sa, noncancer_lumen_chv = getTotalproperties(nonca_lu_mask, "noncancer_lumen")
+    noncancer_stroma_stats, noncancer_stroma_vol, noncancer_stroma_sa, noncancer_stroma_chv = getTotalproperties(nonca_st_mask, "noncancer_stroma")
+    noncancer_epithelium_stats, noncancer_epithelium_vol, noncancer_epithelium_sa, noncancer_epithelium_chv = getTotalproperties(nonca_ep_mask, "noncancer_epithelium")
 
     # Extract sample name
     p = Path(niigz_path)
@@ -369,15 +396,109 @@ def calculate_gland_properties(tiff_path, niigz_path, z_levels, sliceno=None):
     sample_name = p.parts[index + 1]
     print(sample_name)
 
-    # Compile result for this sample
-    result = {
+    total_stats = {
         "sample_name": sample_name,
-        **stats_nerve, 
-        **stats_tumor, 
-        **stats_stroma
+        "Total_lumen_volume": total_lumen_vol,
+        "Total_stroma_volume": total_stroma_vol,
+        "Total_epithelium_volume": total_epithelium_vol,
+        "Total_lumen_surface_area": total_lumen_sa,
+        "Total_stroma_surface_area": total_stroma_sa,
+        "Total_epithelium_surface_area": total_epithelium_sa,
+        "Total_lumen_epithelium_ratio": calculate_ratio(total_lumen_vol, total_epithelium_vol),
+        "Total_stroma_epithelium_ratio": calculate_ratio(total_stroma_vol, total_epithelium_vol),
+        "Total_lumen_SA_to_V_ratio": calculate_ratio(total_lumen_sa, total_lumen_vol),
+        "Total_stroma_SA_to_V_ratio": calculate_ratio(total_stroma_sa, total_stroma_vol),
+        "Total_epithelium_SA_to_V_ratio": calculate_ratio(total_epithelium_sa, total_epithelium_vol),
+        "Total_lumen_solidity": calculate_ratio(total_lumen_vol, total_lumen_chv),
+        "Total_stroma_solidity": calculate_ratio(total_stroma_vol, total_stroma_chv),
+        "Total_epithelium_solidity": calculate_ratio(total_epithelium_vol, total_epithelium_chv),
+        **lumen_stats,
+        **stroma_stats,
+        **epithelium_stats
     }
 
-    return result
+    cancer_stats = {
+        "sample_name": sample_name,
+        "cancer_lumen_volume": cancer_lumen_vol,
+        "cancer_stroma_volume": cancer_stroma_vol,
+        "cancer_epithelium_volume": cancer_epithelium_vol,
+        "cancer_lumen_surface_area": cancer_lumen_sa,
+        "cancer_stroma_surface_area": cancer_stroma_sa,
+        "cancer_epithelium_surface_area": cancer_epithelium_sa,
+        "cancer_lumen_epithelium_ratio": calculate_ratio(cancer_lumen_vol, cancer_epithelium_vol),
+        "cancer_stroma_epithelium_ratio": calculate_ratio(cancer_stroma_vol, cancer_epithelium_vol),
+        "cancer_lumen_SA_to_V_ratio": calculate_ratio(cancer_lumen_sa, cancer_lumen_vol),
+        "cancer_stroma_SA_to_V_ratio": calculate_ratio(cancer_stroma_sa, cancer_stroma_vol),
+        "cancer_epithelium_SA_to_V_ratio": calculate_ratio(cancer_epithelium_sa, cancer_epithelium_vol),
+        "cancer_lumen_solidity": calculate_ratio(cancer_lumen_vol, cancer_lumen_chv),
+        "cancer_stroma_solidity": calculate_ratio(cancer_stroma_vol, cancer_stroma_chv),
+        "cancer_epithelium_solidity": calculate_ratio(cancer_epithelium_vol, cancer_epithelium_chv),
+        **cancer_lumen_stats,
+        **cancer_stroma_stats,
+        **cancer_epithelium_stats
+    }
+
+    noncancer_stats = {
+        "sample_name": sample_name,
+        "noncancer_lumen_volume": noncancer_lumen_vol,
+        "noncancer_stroma_volume": noncancer_stroma_vol,
+        "noncancer_epithelium_volume": noncancer_epithelium_vol,
+        "noncancer_lumen_surface_area": noncancer_lumen_sa,
+        "noncancer_stroma_surface_area": noncancer_stroma_sa,
+        "noncancer_epithelium_surface_area": noncancer_epithelium_sa,
+        "noncancer_lumen_epithelium_ratio": calculate_ratio(noncancer_lumen_vol, noncancer_epithelium_vol),
+        "noncancer_stroma_epithelium_ratio": calculate_ratio(noncancer_stroma_vol, noncancer_epithelium_vol),
+        "noncancer_lumen_SA_to_V_ratio": calculate_ratio(noncancer_lumen_sa, noncancer_lumen_vol),
+        "noncancer_stroma_SA_to_V_ratio": calculate_ratio(noncancer_stroma_sa, noncancer_stroma_vol),
+        "noncancer_epithelium_SA_to_V_ratio": calculate_ratio(noncancer_epithelium_sa, noncancer_epithelium_vol),
+        "noncancer_lumen_solidity": calculate_ratio(noncancer_lumen_vol, noncancer_lumen_chv),
+        "noncancer_stroma_solidity": calculate_ratio(noncancer_stroma_vol, noncancer_stroma_chv),
+        "noncancer_epithelium_solidity": calculate_ratio(noncancer_epithelium_vol, noncancer_epithelium_chv),
+        **noncancer_lumen_stats,
+        **noncancer_stroma_stats,
+        **noncancer_epithelium_stats
+    }
+
+    return total_stats, cancer_stats, noncancer_stats
+
+
+def calculate_surface_area(mask):
+    if np.any(mask):  # Ensure there are positive values in the mask
+        verts, faces, _, _ = marching_cubes(mask.astype(np.uint8), level=0)
+        return len(faces)
+    return 0  # Return 0 if the mask is empty
+
+def calculate_ratio(numerator, denominator):
+    return numerator / denominator if denominator > 0 else 0  # Avoid division by zero
+
+
+def getTotalproperties(mask, prefix):
+
+    stats = {}
+    regions = regionprops(mask)
+
+    volumes, surface, convex_volumes, solidities = [], [], [], []
+
+    for region in regions:
+        volumes.append(region.area)
+        surface.append(region.perimeter)
+        convex_volumes.append(region.convex_area)
+        solidities.append(region.solidity)
+
+    for name, values in zip(
+        ["volume", "surface", "convex_hull_volume", "solidity"], [volumes, surface, convex_volumes, solidities]
+    ):
+        values = np.array(values, dtype=np.float64)  # Ensure numerical stability
+        stats.update({
+            f"{prefix}_{name}_mean": np.nanmean(values),  
+            f"{prefix}_{name}_median": np.nanmedian(values),
+            f"{prefix}_{name}_std": np.nanstd(values),
+            f"{prefix}_{name}_min": np.nanmin(values),
+            f"{prefix}_{name}_max": np.nanmax(values),
+            f"{prefix}_{name}_sum": np.nansum(values),
+        })
+
+    return stats, np.sum(volumes), np.sum(surface), np.sum(convex_volumes)
 
 
 def getObjectProperties(labeled_mask, num_fragments, prefix):
