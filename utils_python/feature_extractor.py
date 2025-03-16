@@ -502,9 +502,20 @@ def getTotalproperties(mask, prefix):
     for name, values in zip(
         ["volume", "convex_hull_volume", "solidity"], [volumes, convex_volumes, solidities]
     ):
-        values = np.array(values, dtype=np.float64)  # Ensure numerical stability
+       values = np.array(values, dtype=np.float64)  # Ensure numerical stability
+        
+    if values.size == 0:  # If no regions exist, fill with NaN or 0
         stats.update({
-            f"{prefix}_{name}_mean": np.nanmean(values),  
+            f"{prefix}_{name}_mean": np.nan,
+            f"{prefix}_{name}_median": np.nan,
+            f"{prefix}_{name}_std": np.nan,
+            f"{prefix}_{name}_min": np.nan,
+            f"{prefix}_{name}_max": np.nan,
+            f"{prefix}_{name}_sum": 0,  # Sum should be 0 if no regions exist
+        })
+    else:
+        stats.update({
+            f"{prefix}_{name}_mean": np.nanmean(values),
             f"{prefix}_{name}_median": np.nanmedian(values),
             f"{prefix}_{name}_std": np.nanstd(values),
             f"{prefix}_{name}_min": np.nanmin(values),
@@ -517,7 +528,10 @@ def getTotalproperties(mask, prefix):
     elif mask.ndim == 2:  # 2D case
         total_SA_or_peri = np.sum([region.perimeter for region in regions])
 
-    return stats, np.sum(volumes), total_SA_or_peri, np.sum(convex_volumes)
+    total_volume = np.sum(volumes) if volumes else 0
+    total_convex_volume = np.sum(convex_volumes) if convex_volumes else 0
+
+    return stats, total_volume, total_SA_or_peri, total_convex_volume
 
 
 def getObjectProperties(labeled_mask, num_fragments, prefix):
