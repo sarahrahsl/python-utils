@@ -467,19 +467,21 @@ def calculate_gland_properties(tiff_path, niigz_path, z_levels, sliceno=None):
 
 
 def calculate_surface_area(mask):
-    from skimage.measure import marching_cubes
     """
     Compute the surface area of a 3D binary mask using the marching cubes algorithm.
     """
-    if not np.any(mask):  # Check if the mask is empty
-        return 0  
-
+    if not np.any(mask):  
+        return 0  # If mask is completely empty, surface area is 0
+    
     mask = (mask > 0).astype(np.uint8)  # Ensure binary mask
 
-    verts, faces, _, _ = marching_cubes(mask, level=0.5)  # Use level=0.5
-    surface_area = np.sum(np.linalg.norm(np.cross(verts[faces[:, 1]] - verts[faces[:, 0]],
-                                                  verts[faces[:, 2]] - verts[faces[:, 0]]), axis=1)) / 2
-    return surface_area
+    try:
+        verts, faces, _, _ = marching_cubes(mask, level=0.5)  # Extract surface at 0.5 threshold
+        surface_area = np.sum(np.linalg.norm(np.cross(verts[faces[:, 1]] - verts[faces[:, 0]],
+                                                      verts[faces[:, 2]] - verts[faces[:, 0]]), axis=1)) / 2
+        return surface_area
+    except ValueError:
+        return 0  # If marching_cubes fails (e.g., fully solid mask), return 0
 
 def calculate_ratio(numerator, denominator):
     return numerator / denominator if denominator > 0 else 0  # Avoid division by zero
