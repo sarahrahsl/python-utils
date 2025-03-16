@@ -2,7 +2,7 @@ import numpy as np
 from scipy.ndimage import distance_transform_edt, zoom, label
 from pathlib import Path
 from .data_handling import read_niigz, read_tiff
-from skimage.measure import regionprops,marching_cubes
+from skimage.measure import regionprops, marching_cubes
 from skimage.measure import label as sklabel
 
 
@@ -467,10 +467,13 @@ def calculate_gland_properties(tiff_path, niigz_path, z_levels, sliceno=None):
 
 
 def calculate_surface_area(mask):
-    if np.any(mask):  # Ensure there are positive values in the mask
-        verts, faces, _, _ = marching_cubes(mask.astype(np.uint8), level=0)
-        return len(faces)
-    return 0  # Return 0 if the mask is empty
+    """
+    Compute the surface area of a 3D binary mask using the marching cubes algorithm.
+    """
+    verts, faces, _, _ = marching_cubes(mask, level=0)  # Extract 3D isosurface
+    surface_area = np.sum(np.linalg.norm(np.cross(verts[faces[:, 1]] - verts[faces[:, 0]],
+                                                  verts[faces[:, 2]] - verts[faces[:, 0]]), axis=1)) / 2
+    return surface_area
 
 def calculate_ratio(numerator, denominator):
     return numerator / denominator if denominator > 0 else 0  # Avoid division by zero
@@ -481,16 +484,15 @@ def getTotalproperties(mask, prefix):
     stats = {}
     regions = regionprops(mask)
 
-    volumes, surface, convex_volumes, solidities = [], [], [], []
+    volumes, convex_volumes, solidities= [], [], []
 
     for region in regions:
         volumes.append(region.area)
-        surface.append(region.perimeter)
         convex_volumes.append(region.convex_area)
         solidities.append(region.solidity)
 
     for name, values in zip(
-        ["volume", "surface", "convex_hull_volume", "solidity"], [volumes, surface, convex_volumes, solidities]
+        ["volume", "convex_hull_volume", "solidity"], [volumes, convex_volumes, solidities]
     ):
         values = np.array(values, dtype=np.float64)  # Ensure numerical stability
         stats.update({
@@ -502,7 +504,12 @@ def getTotalproperties(mask, prefix):
             f"{prefix}_{name}_sum": np.nansum(values),
         })
 
-    return stats, np.sum(volumes), np.sum(surface), np.sum(convex_volumes)
+    if mask.ndim == 3:  # 3D case
+        total_SA_or_peri = calculate_surface_area(mask)
+    elif mask.ndim == 2:  # 2D case
+        total_SA_or_peri = np.sum([region.perimeter for region in regions])
+
+    return stats, np.sum(volumes), total_SA_or_peri, np.sum(convex_volumes)
 
 
 def getObjectProperties(labeled_mask, num_fragments, prefix):
