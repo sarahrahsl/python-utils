@@ -3,6 +3,7 @@ from scipy.ndimage import distance_transform_edt, zoom, label
 from pathlib import Path
 from .data_handling import read_niigz, read_tiff
 from skimage.measure import regionprops,marching_cubes
+from skimage.measure import label as sklabel
 
 
 def crop_and_downsample3D(nerve_mask, cancer_mask, z_levels, zoom_factor = (0.25, 0.25, 0.25)):
@@ -369,6 +370,9 @@ def calculate_gland_properties(tiff_path, niigz_path, z_levels, sliceno=None):
     lu_mask = ((gland_mask_cropped == 1))
     st_mask = ((gland_mask_cropped == 2))
     ep_mask = ((gland_mask_cropped == 3))
+    lu_mask = sklabel(lu_mask)
+    st_mask = sklabel(st_mask)
+    ep_mask = sklabel(ep_mask)
     cancer_lu_mask = lu_mask & cancer_mask_resized
     nonca_lu_mask = lu_mask & ~cancer_mask_resized
     cancer_st_mask = st_mask & cancer_mask_resized
