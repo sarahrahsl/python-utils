@@ -367,12 +367,9 @@ def calculate_gland_properties(tiff_path, niigz_path, z_levels, sliceno=None):
         gland_mask_cropped, cancer_mask_resized = crop_and_downsample3D(gland_mask, cancer_mask, z_levels)
 
     # Separate lumen, stroma, and epithelium
-    lu_mask = ((gland_mask_cropped == 1))
-    st_mask = ((gland_mask_cropped == 2))
-    ep_mask = ((gland_mask_cropped == 3))
-    lu_mask = sklabel(lu_mask)
-    st_mask = sklabel(st_mask)
-    ep_mask = sklabel(ep_mask)
+    lu_mask = ((gland_mask_cropped == 1)).astype(int)
+    st_mask = ((gland_mask_cropped == 2)).astype(int)
+    ep_mask = ((gland_mask_cropped == 3)).astype(int)
     cancer_lu_mask = lu_mask & cancer_mask_resized
     nonca_lu_mask = lu_mask & ~cancer_mask_resized
     cancer_st_mask = st_mask & cancer_mask_resized
@@ -398,6 +395,8 @@ def calculate_gland_properties(tiff_path, niigz_path, z_levels, sliceno=None):
     p = Path(niigz_path)
     index = p.parts.index("UPenn_Clinical")
     sample_name = p.parts[index + 1]
+    if sample_name == "For Jennifer":
+        sample_name = p.parts[index + 2]
     print(sample_name)
 
     total_stats = {
