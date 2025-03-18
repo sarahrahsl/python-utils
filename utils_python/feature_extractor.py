@@ -41,7 +41,6 @@ def crop_and_downsample3D(nerve_mask, cancer_mask, z_levels, zoom_factor = (0.25
             cancer_mask_resized = cancer_mask_resized[:nerve_mask_cropped.shape[0], :, :]
     
     # Ensure nerve mask is boolean and convert cancer mask from 0,255 to 0,1
-    nerve_mask_cropped = nerve_mask_cropped.astype(bool)
     cancer_mask_resized = (cancer_mask_resized == 255).astype(bool)
 
     return nerve_mask_cropped, cancer_mask_resized
@@ -66,6 +65,7 @@ def calculate_features(tiff_path, niigz_path, z_levels, pixelno_adj=20, pixelno_
     cancer_mask = np.transpose(cancer_mask, (1, 2, 0))  # Now (X, Y, Z)
 
     nerve_mask_cropped, cancer_mask_resized = crop_and_downsample3D(nerve_mask, cancer_mask, z_levels)
+    nerve_mask_cropped = nerve_mask_cropped.astype(bool)
 
     # Label individual nerves
     labeled_nerves, num_labels = label(nerve_mask_cropped)
@@ -319,6 +319,7 @@ def calculate_properties(tiff_path, niigz_path, z_levels, sliceno=None):
         cancer_mask = read_tiff(tiff_path)  # Shape: (Z, X, Y)
         cancer_mask = np.transpose(cancer_mask, (1, 2, 0))  # Now (X, Y, Z)
         nerve_mask_cropped, cancer_mask_resized = crop_and_downsample3D(nerve_mask, cancer_mask, z_levels)
+        nerve_mask_cropped = nerve_mask_cropped.astype(bool)
 
     tumor_nerve = nerve_mask_cropped & cancer_mask_resized
     stroma_nerve = nerve_mask_cropped & ~cancer_mask_resized
@@ -376,7 +377,6 @@ def calculate_gland_properties(tiff_path, niigz_path, z_levels, sliceno=None):
     nonca_st_mask = st_mask & ~cancer_mask_resized
     cancer_ep_mask = ep_mask & cancer_mask_resized
     nonca_ep_mask = ep_mask & ~cancer_mask_resized
-
 
     # Calculate total vol, surface, and convex hull for each mask + individual masks
     lumen_stats, total_lumen_vol, total_lumen_sa, total_lumen_chv = getTotalproperties(lu_mask, "lumen")
